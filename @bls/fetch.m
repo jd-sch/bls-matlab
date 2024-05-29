@@ -3,7 +3,7 @@ function d = fetch(c,s,varargin)
 %   D = FETCH(C,S) returns data from the BLS API for a given series or cell
 %   array of series, S, and connection handle, C. Defaults to last 10 years
 %   of data.
-% 
+%
 %   D = FETCH(C,S,D1) returns data for the year D1 to present.
 %
 %   D = FETCH(C,S,D1,D2) returns data for the for the year range D1 to D2.
@@ -16,145 +16,162 @@ function d = fetch(c,s,varargin)
 %   Author: Micah Smith
 %   Date: April 2015
 
-  % Constants
-  BLS_RESPONSE_SUCCESS = 'REQUEST_SUCCEEDED';
-  BLS_RESPONSE_CATALOG_FAIL = 'unable to get catalog data';
-  
-  % Validate arguments
-  validCatalogTrue = {'true','on'};
-  validCatalogFalse = {'false','off'};
-  validCatalog = {validCatalogTrue{:}, validCatalogFalse{:}};
-  defaultCatalog = 0;
-  defaultEndYear = datestr(now(), 'yyyy');
-  defaultStartYear = num2str(str2double(defaultEndYear)-9);
-  validationYear = ...
+% Constants
+BLS_RESPONSE_SUCCESS = 'REQUEST_SUCCEEDED';
+BLS_RESPONSE_CATALOG_FAIL = 'unable to get catalog data';
+
+% Validate arguments
+validCatalogTrue = {'true','on'};
+validCatalogFalse = {'false','off'};
+validCatalog = {validCatalogTrue{:}, validCatalogFalse{:}};
+defaultCatalog = 0;
+defaultEndYear = datestr(now(), 'yyyy');
+defaultStartYear = num2str(str2double(defaultEndYear)-9);
+validationYear = ...
     @(x) (ischar(x) && regexp(x, '\d\d\d\d')) || ...
-         (isnumeric(x) && isscalar(x) && (x>=1900));
-  validationCatalog = ...
+    (isnumeric(x) && isscalar(x) && (x>=1900));
+validationCatalog = ...
     @(x) (ischar(x) && any(strcmpi(x, validCatalog))) || ...
-         (isnumeric(x) && isscalar(x));
-  validationSeries = ...
+    (isnumeric(x) && isscalar(x));
+validationSeries = ...
     @(x) ischar(x) || iscellstr(x);
-  p = inputParser();
-  addRequired(p, 's', validationSeries);
-  addOptional(p, 'startyear', defaultStartYear, validationYear);
-  addOptional(p, 'endyear', defaultEndYear, validationYear);
-  addParameter(p, 'catalog', defaultCatalog, validationCatalog);
-  parse(p, s, varargin{:});
-  startYear = p.Results.startyear;
-  endYear = p.Results.endyear;
-  if ischar(p.Results.catalog) && ...
-     any(strcmpi(p.Results.catalog, validCatalogTrue))
+p = inputParser();
+addRequired(p, 's', validationSeries);
+addOptional(p, 'startyear', defaultStartYear, validationYear);
+addOptional(p, 'endyear', defaultEndYear, validationYear);
+addParameter(p, 'catalog', defaultCatalog, validationCatalog);
+parse(p, s, varargin{:});
+startYear = p.Results.startyear;
+endYear = p.Results.endyear;
+if ischar(p.Results.catalog) && ...
+        any(strcmpi(p.Results.catalog, validCatalogTrue))
     catalog = 1;
-  elseif isnumeric(p.Results.catalog) && p.Results.catalog > 0
+elseif isnumeric(p.Results.catalog) && p.Results.catalog > 0
     catalog = 1;
-  else
+else
     catalog = 0;
-  end
-  
-  % BLS requires uppercase series.
-  if ischar(s)
+end
+
+% BLS requires uppercase series.
+if ischar(s)
     s = cellstr(s);
-  end
-  s = upper(s);
-  
-  % Setup request and payload.
-  url = c.url;
-  dates = {'startyear', startYear, 'endyear', endYear};
-  params = {'catalog', catalog};
-  
-  % Try registration key
-  if ~isempty(c.key)
+end
+s = upper(s);
+
+% Setup request and payload.
+url = c.url;
+dates = {'startyear', startYear, 'endyear', endYear};
+params = {'catalog', catalog};
+
+% Try registration key
+if ~isempty(c.key)
     auth = {'registrationKey',c.key};
-  else
+else
     auth = {};
-  end
-  
-  postdata = struct('seriesid',{s}, ...
-                dates{:}, ...
-                params{:}, ...
-                auth{:});
-        
-  options = weboptions('MediaType','application/json');
+end
 
-  % Send POST request to BLS.
-  try
+postdata = struct('seriesid',{s}, ...
+    dates{:}, ...
+    params{:}, ...
+    auth{:});
+
+options = weboptions('MediaType','application/json');
+
+% Send POST request to BLS.
+try
     response = webwrite(url, postdata, options);
-  catch err
+catch err
     error('Error connecting to BLS servers.');
-  end
+end
 
-  % Response okay?
-  if ~strcmpi(response.status,BLS_RESPONSE_SUCCESS)
+% Response okay?
+if ~strcmpi(response.status,BLS_RESPONSE_SUCCESS)
     warning('Request failed with message ''%s''',response.message{:});
     d.SeriesID = [];
     d.Data = [];
     return;
-  end
-  
-  % Catalog okay?
-  if catalog && ...
-     ~isempty(response.message) && ...
-     any(cell2mat(strfind(lower(response.message), BLS_RESPONSE_CATALOG_FAIL)))
-    catalogOkay = 0;
-  else
-    catalogOkay = 1;
-  end
-  
-  % Parse response.
-  nSeries = length(response.Results.series);
-  for iSeries = 1:nSeries
-    d(iSeries).SeriesID = response.Results.series(iSeries).seriesID;
+end
 
-    if catalog 
-      if catalogOkay
-        d(iSeries).Catalog = response.Results.series(iSeries).catalog;
-      else
-        d(iSeries).Catalog = [];
-      end
+% Catalog okay?
+if catalog && ...
+        ~isempty(response.message) && ...
+        any(cell2mat(strfind(lower(response.message), BLS_RESPONSE_CATALOG_FAIL)))
+    catalogOkay = 0;
+else
+    catalogOkay = 1;
+end
+
+% Parse response.
+nSeries = length(response.Results.series);
+for iSeries = 1:nSeries
+    try
+        d(iSeries).SeriesID = response.Results.series(iSeries).seriesID;
+    catch
+        d(iSeries).SeriesID = response.Results.series{iSeries}.seriesID;
     end
-    
+
+    if catalog
+        if catalogOkay
+            try
+                d(iSeries).Catalog = response.Results.series(iSeries).catalog;
+            catch
+                % In some cases, the values of response.Results.series are
+                % returned as structure array
+                d(iSeries).Catalog = response.Results.series{iSeries}.catalog;
+            end
+        else
+            d(iSeries).Catalog = [];
+        end
+    end
+
     try
         % usually the response data is parsed as a structure array
         data = arrayfun(@blsExtractDataField, ...
-                        response.Results.series(iSeries).data, 'un', 0);
+            response.Results.series(iSeries).data, 'un', 0);
     catch
         % In some cases, the BLS API returns additional fields for only
         % some observations, such as `latest: true`, causing the response
         % data to be parsed as a cell array
-        data = cellfun(@blsExtractDataField, ...
-                        response.Results.series(iSeries).data, 'un', 0);
+        try
+            data = cellfun(@blsExtractDataField, ...
+                response.Results.series(iSeries).data, 'un', 0);
+        catch
+            % In some cases, the values of response.Results.series are
+            % returned as structure array
+            data = arrayfun(@blsExtractDataField, ...
+                response.Results.series{iSeries}.data, 'un', 0);
+        end
     end
-   
+
     data = cell2mat(data);
     data = flipud(data);
     d(iSeries).Data = data;
-  end
+end
 
 end % End of fetch function
 
 % Extract the date, value pair from this struct.
 function out = blsExtractDataField(field)
-  value = str2double(field.value);
+value = str2double(field.value);
 
-  year = str2double(field.year);
-  period = field.period;
-  % Monthly data
-  if ~isempty(regexp(period, 'M\d\d', 'once')) && ~strcmp(period, 'M13') 
+year = str2double(field.year);
+period = field.period;
+% Monthly data
+if ~isempty(regexp(period, 'M\d\d', 'once')) && ~strcmp(period, 'M13')
     myDate = datenum([year, str2double(period(2:3)),1]);
 
-  % Quarterly data
-  elseif regexp(period, 'Q\d\d')
+    % Quarterly data
+elseif regexp(period, 'Q\d\d')
     myDate = datenum([year, 3*str2double(period(3))-2, 1]);
 
-  % Annual data
-  elseif regexp(period, 'A\d\d')
+    % Annual data
+elseif regexp(period, 'A\d\d')
     myDate = datenum([year,1,1]);
 
-  % Not implemented.
-  else
+    % Not implemented.
+else
     error(['Data from period ',field.periodName, ' not implemented']);
-  end
+end
 
-  out = [myDate, value];
+out = [myDate, value];
 end
